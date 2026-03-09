@@ -1,0 +1,4 @@
+interface:
+  display_name: "JHub Deploy Skill"
+  short_description: "Guide Pi to deploy/manage apps via jhub-apps and jhub-app-proxy."
+  default_prompt: "Use this skill to deploy, operate, and debug Nebari apps."

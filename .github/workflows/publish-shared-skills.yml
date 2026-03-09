@@ -1,0 +1,123 @@
+name: Publish Shared Skills Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional release tag override (default: pi-shared-skills-<short-sha>)"
+        required: false
+        type: string
+      skills_path:
+        description: Path to shared-skills directory
+        required: false
+        default: shared-skills
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "shared-skills/**"
+      - ".github/workflows/publish-shared-skills.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build archives
+        id: build
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag || '' }}
+          SKILLS_PATH: ${{ github.event.inputs.skills_path || 'shared-skills' }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "$SKILLS_PATH" ]; then
+            echo "skills path not found: $SKILLS_PATH" >&2
+            exit 1
+          fi
+
+          short_sha="${GITHUB_SHA::12}"
+          tag="${INPUT_TAG:-pi-shared-skills-${short_sha}}"
+          archive_versioned="shared-skills-${short_sha}.tar.gz"
+          archive_latest="shared-skills.tar.gz"
+
+          parent_dir="$(dirname "$SKILLS_PATH")"
+          dir_name="$(basename "$SKILLS_PATH")"
+
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 --group=0 --numeric-owner \
+            -czf "$archive_versioned" \
+            -C "$parent_dir" "$dir_name"
+
+          cp "$archive_versioned" "$archive_latest"
+
+          sha256="$(sha256sum "$archive_versioned" | awk '{print $1}')"
+          printf '%s  %s\n' "$sha256" "$archive_versioned" > "${archive_versioned}.sha256"
+          printf '%s  %s\n' "$sha256" "$archive_latest" > "${archive_latest}.sha256"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "archive_versioned=$archive_versioned" >> "$GITHUB_OUTPUT"
+          echo "archive_latest=$archive_latest" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.build.outputs.tag }}
+          ARCHIVE_VERSIONED: ${{ steps.build.outputs.archive_versioned }}
+          ARCHIVE_LATEST: ${{ steps.build.outputs.archive_latest }}
+          SHA256: ${{ steps.build.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          title="Pi Shared Skills ${TAG}"
+          notes="Shared skills artifact built from commit ${GITHUB_SHA}.\n\nSHA256: ${SHA256}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "$ARCHIVE_VERSIONED" "${ARCHIVE_VERSIONED}.sha256" \
+              "$ARCHIVE_LATEST" "${ARCHIVE_LATEST}.sha256" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "$ARCHIVE_VERSIONED" "${ARCHIVE_VERSIONED}.sha256" \
+              "$ARCHIVE_LATEST" "${ARCHIVE_LATEST}.sha256" \
+              --title "$title" \
+              --notes "$notes"
+          fi
+
+          url_versioned="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ARCHIVE_VERSIONED}"
+          url_latest="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/${ARCHIVE_LATEST}"
+          echo "url_versioned=$url_versioned" >> "$GITHUB_OUTPUT"
+          echo "url_latest=$url_latest" >> "$GITHUB_OUTPUT"
+
+      - name: Print values snippet
+        run: |
+          cat <<EOF
+          Published shared-skills artifacts:
+            Versioned URL: ${{ steps.release.outputs.url_versioned }}
+            Latest URL:    ${{ steps.release.outputs.url_latest }}
+            SHA256:        ${{ steps.build.outputs.sha256 }}
+
+          Suggested Pi pack values (immutable):
+
+          pi:
+            sharedSkills:
+              mode: pvc-subpath
+              sync:
+                enabled: true
+                releaseId: "${{ steps.build.outputs.tag }}"
+                source:
+                  type: url
+                  url: "${{ steps.release.outputs.url_versioned }}"
+                  sha256: "${{ steps.build.outputs.sha256 }}"
+          EOF
