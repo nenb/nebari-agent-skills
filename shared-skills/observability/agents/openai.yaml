@@ -1,4 +1,4 @@
 interface:
   display_name: "Observability Skill"
-  short_description: "Guide Pi to use Grafana/Loki/Prometheus on this Nebari cluster."
-  default_prompt: "Use this skill to inspect monitoring health and investigate issues."
+  short_description: "Guide Pi to diagnose Grafana/Loki/Prometheus health on any Nebari deployment."
+  default_prompt: "Use this skill to discover monitoring endpoints, check health, and investigate observability issues."
