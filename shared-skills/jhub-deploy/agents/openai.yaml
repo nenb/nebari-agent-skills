@@ -1,4 +1,4 @@
 interface:
   display_name: "JHub Deploy Skill"
-  short_description: "Guide Pi to deploy/manage apps via jhub-apps and jhub-app-proxy."
-  default_prompt: "Use this skill to deploy, operate, and debug Nebari apps."
+  short_description: "Deploy/manage Nebari JupyterHub apps via nebari_app_* wrappers (local k3s or cloud Kubernetes)."
+  default_prompt: "Use this skill to deploy, operate, and debug JupyterHub apps with the current nebari_app_* CLI options and triage flow."

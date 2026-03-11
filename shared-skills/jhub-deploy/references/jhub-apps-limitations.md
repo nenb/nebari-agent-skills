@@ -1,24 +1,35 @@
-# jhub-apps and jhub-app-proxy Limitations
+# jhub-apps / nebari_app_* Operational Limits
 
-## Functional Limits
+These limits apply in local k3s and cloud Kubernetes deployments alike.
+
+## Functional limits
 1. One named server per app name per user.
-2. No zero-downtime rollout for same app name; replacement restarts server.
-3. Startup diagnostics depend on jhub-app-proxy temp endpoints and may disappear after readiness.
-4. Public exposure and auth behavior depend on jhub-apps settings and proxy routing.
-5. Framework adapter behavior differs by framework and entrypoint expectations.
+2. Replacing same app name is restart-based (no zero-downtime replacement).
+3. Startup diagnostics from `/_temp/jhub-app-proxy/...` can be transient.
+4. Public/auth behavior depends on JupyterHub + gateway config.
+5. `custom` framework correctness depends on user command and lifecycle behavior.
 
-## Operational Limits
-1. Profile choice is bounded by JupyterHub `profile_list`.
-2. Resource contention is still Kubernetes scheduling; app deploy can be accepted while pod remains pending.
-3. `custom` framework correctness is user responsibility (command, port wiring, process lifecycle).
-4. Delete removes app definition; stop keeps definition but server can be started again.
+## Wrapper-specific limits (current CLI)
+1. Supported frameworks: `streamlit`, `panel`, `voila`, `gradio`, `jupyterlab`, `custom`.
+2. `custom` command must be module-style and include `{port}`.
+3. Cross-user actions are blocked by default.
+   - override only with `NEBARI_APP_ALLOW_OTHER_USERS=1`.
+4. `nebari_app_logs` may fall back to status summary if temp log endpoint is unavailable.
 
-## Triage Order for Failed Deployments
-1. `nebari_app_status --name <name>`
-2. `nebari_app_logs --name <name>`
-3. Inspect `server.user_options` for wrong framework/filepath/profile.
-4. Check namespace pod events:
+## Triage order
+1. `nebari_app_status --name <name> --json`
+2. `nebari_app_logs --name <name> --lines 300`
+3. `nebari_app_doctor --name <name> --json`
+4. Inspect user options for bad framework/filepath/profile.
+5. If `kubectl` available, inspect pods/events cluster-side:
 ```bash
-kubectl -n nc get pods | grep <normalized-name>
-kubectl -n nc describe pod <pod-name>
+kubectl get pods -A | grep -i <name>
+kubectl get events -A --sort-by=.lastTimestamp | tail -n 150
 ```
+
+## Common failure patterns
+- `ImagePullBackOff` / `ErrImagePull`
+- `CrashLoopBackOff`
+- pending pods from CPU/memory/PVC constraints
+- wrong `custom` command semantics
+- wrong profile or missing image/runtime deps

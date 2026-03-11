@@ -1,68 +1,180 @@
 ---
 name: jhub-deploy
-description: Use when Pi needs to deploy, update, stop, delete, or inspect Nebari apps through jhub-apps and jhub-app-proxy. Trigger this skill for requests like "deploy Streamlit app", "check app startup logs", "stop app", "delete app", or "why is app not reachable?".
+description: Use when Pi needs to deploy, inspect, update, stop, or delete JupyterHub apps via nebari_app_* wrappers (jhub-apps/jhub-app-proxy), across local k3s or cloud Kubernetes.
 ---
 
-# JHub Deploy (Second-Attempt Cluster)
+# JHub Deploy Skill (Local k3s + Cloud Kubernetes)
 
-Use the `nebari_app_*` wrappers available in the Pi image. They call JupyterHub APIs and jhub-app-proxy log endpoints.
+This skill is **runtime-agnostic** (k3s/k3d, EKS/GKE/AKS, generic K8s) because it uses JupyterHub APIs via the `nebari_app_*` CLIs inside Pi images.
 
-## Fast Path
-1. Deploy:
+Use this skill for requests like:
+- "deploy Streamlit/Panel/Gradio app"
+- "check app startup logs"
+- "stop/delete app"
+- "why is app not reachable?"
+
+---
+
+## 1) Preconditions
+
+Verify wrappers exist:
 ```bash
-nebari_app_deploy --name <app-name> --framework <streamlit|panel|voila|gradio|jupyterlab|custom> --filepath <path>
+command -v nebari_app_deploy nebari_app_status nebari_app_logs nebari_app_stop nebari_app_delete nebari_app_doctor
 ```
 
-2. Check status:
+These wrappers require Hub API env in runtime:
+- `NEBARI_HUB_API_URL` or `JUPYTERHUB_API_URL`
+- `NEBARI_HUB_API_TOKEN` or `JUPYTERHUB_API_TOKEN`
+- user identity from `JUPYTERHUB_USER`/`NB_USER` (or inferred from service prefix)
+
+If missing, report that the Pi image/runtime is not configured for jhub-app lifecycle commands.
+
+---
+
+## 2) Exact CLI surface (current)
+
+## `nebari_app_deploy`
 ```bash
-nebari_app_status --name <app-name>
+nebari_app_deploy \
+  --name <app-name> \
+  --framework <streamlit|panel|voila|gradio|jupyterlab|custom> \
+  [--filepath <path>] \
+  [--custom-command "<module cmd with {port}>"] \
+  [--display-name <text>] \
+  [--description <text>] \
+  [--public] \
+  [--keep-alive] \
+  [--env-json '{"KEY":"value"}'] \
+  [--conda-env <env>] \
+  [--profile <profile>] \
+  [--profile-image <image>] \
+  [--share-users user1,user2] \
+  [--share-groups group1,group2] \
+  [--replace] \
+  [--wait-seconds <n>] \
+  [--user <hub-user>]
 ```
 
-3. Read startup/runtime logs:
+## `nebari_app_status`
 ```bash
-nebari_app_logs --name <app-name>
+nebari_app_status --name <app-name> [--json] [--user <hub-user>]
 ```
 
-4. Stop (keep definition) or delete (remove definition):
+## `nebari_app_logs`
 ```bash
-nebari_app_stop --name <app-name>
-nebari_app_delete --name <app-name>
+nebari_app_logs --name <app-name> [--lines <n>] [--user <hub-user>]
 ```
 
-## Deployment Patterns
-1. Streamlit:
+## `nebari_app_stop`
 ```bash
-nebari_app_deploy --name streamlit-demo --framework streamlit --filepath /home/nenb/apps/streamlit_app.py
+nebari_app_stop --name <app-name> [--wait-seconds <n>] [--user <hub-user>]
 ```
 
-2. Panel:
+## `nebari_app_delete`
 ```bash
-nebari_app_deploy --name panel-demo --framework panel --filepath /home/nenb/apps/panel_app.py
+nebari_app_delete --name <app-name> [--wait-seconds <n>] [--user <hub-user>]
 ```
 
-3. Custom command (module-style only on this stack):
+## `nebari_app_doctor`
+```bash
+nebari_app_doctor [--name <app-name>] [--json] [--no-log-probe] [--user <hub-user>]
+```
+
+Important safety behavior:
+- Cross-user actions are blocked unless `NEBARI_APP_ALLOW_OTHER_USERS=1`.
+
+---
+
+## 3) Canonical deploy flows
+
+## Streamlit
+```bash
+nebari_app_deploy \
+  --name streamlit-demo \
+  --framework streamlit \
+  --filepath /home/ubuntu/apps/streamlit_app.py \
+  --wait-seconds 20
+```
+
+## Panel
+```bash
+nebari_app_deploy \
+  --name panel-demo \
+  --framework panel \
+  --filepath /home/ubuntu/apps/panel_app.py \
+  --wait-seconds 20
+```
+
+## Gradio
+```bash
+nebari_app_deploy \
+  --name gradio-demo \
+  --framework gradio \
+  --filepath /home/ubuntu/apps/gradio_app.py \
+  --wait-seconds 20
+```
+
+## Custom
 ```bash
 nebari_app_deploy \
   --name custom-demo \
   --framework custom \
-  --filepath /home/nenb/apps \
-  --custom-command "my_package.server {--}port={port}"
+  --filepath /home/ubuntu/apps \
+  --custom-command "my_package.server {--}port={port}" \
+  --wait-seconds 20
 ```
 
-> Do **not** include `python`, `python -m`, or script paths in `--custom-command` for this deployment.
-> jhub-apps already prepends `python {-}m` in custom mode.
+Custom mode rules:
+- Must be module-style command (no `python`, no script path).
+- Must include `{port}` placeholder.
 
-## Rules and Limitations
-1. App names are normalized to lowercase-dash and map to named servers.
-2. Same app name for the same user is a conflict unless redeployed with replacement.
-3. jhub-app-proxy startup logs live under `/_temp/jhub-app-proxy/` while app is booting.
-4. Framework choices are constrained to wrappers: `panel`, `streamlit`, `voila`, `gradio`, `jupyterlab`, `custom`.
-5. For `custom`, pass only module/args; do **not** prefix with `python` or `python -m` (stack auto-injects it).
-6. For `custom`, command must include port placeholder handling (`{port}` and typically `{--}`).
-7. Validate every deploy with `nebari_app_status` + `nebari_app_logs` before reporting success.
-8. App links should be opened as `/user/<username>/<app-name>/` (avoid `/hub/user/...` as canonical URL).
-9. Profile selection must match existing JupyterHub profiles (`small`, `medium`, `large`, and Pi-specific profiles if applicable).
-10. Stop and delete are separate operations; use stop first for non-destructive pause.
+---
 
-## References
-- Read `references/jhub-apps-limitations.md` before proposing production-grade rollout plans.
+## 4) Validation sequence after every deploy
+
+Always run:
+```bash
+nebari_app_status --name <app-name>
+nebari_app_logs --name <app-name>
+```
+
+If not healthy:
+```bash
+nebari_app_doctor --name <app-name>
+```
+
+Canonical URL pattern to report:
+- `/user/<username>/<app-name>/`
+
+---
+
+## 5) Triage for failed/unreachable app
+
+1. Wrapper-level checks:
+```bash
+nebari_app_status --name <app-name> --json
+nebari_app_logs --name <app-name> --lines 300
+nebari_app_doctor --name <app-name> --json
+```
+
+2. If `kubectl` is available, inspect Kubernetes side (namespace-aware):
+```bash
+kubectl get pods -A | grep -i <app-name>
+kubectl get events -A --sort-by=.lastTimestamp | tail -n 150
+```
+
+3. If still unclear, switch to observability skill and query Loki logs for the same app namespace/pod labels.
+
+---
+
+## 6) Stop vs delete semantics
+
+- `nebari_app_stop`: stops runtime, keeps definition.
+- `nebari_app_delete`: removes definition/server entry.
+
+Use `stop` first when user wants pause/restart behavior without losing config.
+
+---
+
+## Reference
+- Read `references/jhub-apps-limitations.md` for known operational limitations and triage order.

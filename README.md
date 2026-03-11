@@ -14,7 +14,6 @@ This repository publishes versioned artifacts that the Pi pack consumes via URL:
 shared-skills/
   jhub-deploy/
   observability/
-  web-browser/
 ```
 
 ## CI publishing
