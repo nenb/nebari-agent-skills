@@ -1,4 +1,4 @@
 interface:
   display_name: "Observability Skill"
-  short_description: "Guide Pi to diagnose Grafana/Loki/Prometheus health on any Nebari deployment."
-  default_prompt: "Use this skill to discover monitoring endpoints, check health, and investigate observability issues."
+  short_description: "Diagnose LGTM access and debug deployments with logs/events/rollout via pi-debug or direct Loki/Grafana APIs."
+  default_prompt: "Use this skill to discover observability endpoints, verify Grafana/Loki/Mimir/Tempo health, and get the fastest path to actionable logs in local, cloud, or generic Kubernetes deployments."
